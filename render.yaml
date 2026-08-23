@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: restaurant-recommendation-web
+    env: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true

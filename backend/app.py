@@ -21,13 +21,15 @@ except ImportError:
     ollama_client = None
 
 app = Flask(__name__)
-app.secret_key = "change-this-secret-key"
+app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-me")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.path.join(BASE_DIR, "restaurants.db")
 AUTH_WORKBOOK = os.environ.get(
     "RESTAURANT_WORKBOOK",
-    r"C:\Users\shrad\Downloads\prototype\data\restaurants_final_with_maps.xlsx",
+    os.path.abspath(
+        os.path.join(BASE_DIR, "..", "data", "restaurants_final_with_maps.xlsx")
+    ),
 )
 AUTH_LOCK = Lock()
 
