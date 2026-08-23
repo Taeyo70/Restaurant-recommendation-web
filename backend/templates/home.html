@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FoodFinder - Discover & Analyze Restaurants</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<header class="topbar">
+    <a href="/home" class="logo">
+        <div class="logo-badge">🍴</div>
+        <span>FoodFinder</span>
+    </a>
+
+    <div class="top-actions">
+        <nav class="nav-links">
+            <a href="/home" class="nav-link active">Dashboard</a>
+            <a href="/recommendations" class="nav-link">🤖 Smart AI Recommendations</a>
+            <a href="/favorites" class="nav-link">❤️ Favorites</a>
+        </nav>
+
+        <a href="/profile" class="profile-menu" aria-label="Open profile">
+            <div class="profile-icon">{{ session.get("username", "G")[:1]|upper }}</div>
+            <div class="profile-text">
+                <strong>{{ session.get("username", "Guest") }}</strong>
+                <small>Food Explorer</small>
+            </div>
+        </a>
+    </div>
+</header>
+
+<main class="page-container">
+    <section class="animated-hero">
+        <div class="hero-content">
+            <div class="hero-badge">🔥 Hot & Craving Delicious Food?</div>
+            <h1 class="hero-title">Discover the Best Taste & Top Restaurants Near You</h1>
+            <p class="hero-subtitle">Explore thousands of top-rated pizza places, gourmet dining, and food analytics in real-time.</p>
+
+            <form class="hero-search-bar" action="/ai-search" method="POST">
+                <span class="search-icon">🤖</span>
+                <input type="text" name="query" placeholder="Ask Smart AI: Find spicy food under ₹1000 in Agra..." required>
+                <button type="submit">Smart Search</button>
+            </form>
+
+            <div class="hero-tags">
+                <span>Popular:</span>
+                <a href="/search?keyword=Pizza">🍕 Pizza</a>
+                <a href="/search?keyword=Burger">🍔 Burgers</a>
+                <a href="/search?keyword=Biryani">🍲 Biryani</a>
+                <a href="/search?keyword=Italian">🍝 Italian</a>
+            </div>
+        </div>
+
+        <div class="hero-animation-wrapper">
+            <div class="canvas-glow"></div>
+            <canvas id="heroFrameCanvas"
+                    data-frame1="{{ url_for('static', filename='images/food-fruit.jpg') }}"
+                    data-frame2="{{ url_for('static', filename='images/food-burger.jpg') }}"
+                    data-frame3="{{ url_for('static', filename='images/food-bowl.jpg') }}"
+                    data-frame4="{{ url_for('static', filename='images/food-fruit.jpg') }}"
+                    data-frame5="{{ url_for('static', filename='images/food-burger.jpg') }}"
+                    data-fallback1="{{ url_for('static', filename='images/frame1.jpg') }}"
+                    data-fallback2="{{ url_for('static', filename='images/frame2.jpg') }}"
+                    data-fallback3="{{ url_for('static', filename='images/frame3.jpg') }}"
+                    data-fallback4="{{ url_for('static', filename='images/frame4.jpg') }}"
+                    data-fallback5="{{ url_for('static', filename='images/frame5.jpg') }}"
+                    width="960" height="540"></canvas>
+
+            <div class="hero-floating-card">
+                <span class="floating-icon">🍕</span>
+                <div>
+                    <strong>Sizzling Hot Pizza</strong>
+                    <small>★ 4.9 (1,240+ reviews)</small>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div class="dashboard-title">
+        <span>📊 Restaurant Analytics Overview</span>
+    </div>
+
+    <div class="stats">
+        <div class="stat-card">
+            <div class="stat-icon-wrapper orange">🍴</div>
+            <div class="stat-info">
+                <span>Total Restaurants</span>
+                <strong>{{ total_restaurants }}</strong>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon-wrapper blue">🏙️</div>
+            <div class="stat-info">
+                <span>Cities Covered</span>
+                <strong>{{ total_cities }}</strong>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon-wrapper green">⭐</div>
+            <div class="stat-info">
+                <span>Average Rating</span>
+                <strong>{{ avg_rating }} / 5.0</strong>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon-wrapper purple">💳</div>
+            <div class="stat-info">
+                <span>Avg Cost for Two</span>
+                <strong>₹{{ avg_cost }}</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="analytics-grid">
+        <section class="analytics-card">
+            <div class="analytics-header">
+                <h2>🏙️ Restaurants Per City</h2>
+                <small style="color: var(--text-muted); font-weight: 600;">Top Cities</small>
+            </div>
+
+            {% if city_data %}
+                {% for city in city_data %}
+                    <div class="bar-row">
+                        <span class="bar-label" title="{{ city['City'] }}">{{ city['City'] }}</span>
+                        <div class="custom-bar-track">
+                            <div class="custom-bar-fill fill-orange" style="width: {{ city['percentage'] }}%;"></div>
+                        </div>
+                        <span class="rating-badge">★ {{ city['rating'] }}</span>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p style="color: var(--text-muted);">No city data available.</p>
+            {% endif %}
+        </section>
+
+        <section class="analytics-card">
+            <div class="analytics-header">
+                <h2>🍳 Popular Cuisines</h2>
+                <small style="color: var(--text-muted); font-weight: 600;">By Count</small>
+            </div>
+
+            {% if cuisine_data %}
+                {% for cuisine in cuisine_data %}
+                    <div class="cuisine-row">
+                        <span class="bar-label" title="{{ cuisine['Cuisine'] }}">{{ cuisine['Cuisine'] }}</span>
+                        <div class="custom-bar-track">
+                            <div class="custom-bar-fill fill-blue" style="width: {{ cuisine['percentage'] }}%;"></div>
+                        </div>
+                        <span class="count-badge">{{ cuisine['total'] }} places</span>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p style="color: var(--text-muted);">No cuisine data available.</p>
+            {% endif %}
+        </section>
+    </div>
+
+    <div style="text-align: center;">
+        <a href="/recommendations" class="browse-button">🤖 Open Smart AI Recommendations</a>
+    </div>
+</main>
+
+<footer class="footer">
+    <div class="footer-content">
+        <div class="footer-links">
+            <span>About Us</span>
+            <span>Help Center</span>
+            <span>Privacy Policy</span>
+            <span>API Docs</span>
+        </div>
+        <p>© 2026 FoodFinder. All rights reserved.</p>
+    </div>
+</footer>
+
+<script src="{{ url_for('static', filename='main.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FoodFinder - Sign In</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="login-page">
+    <main class="login-shell">
+        <section class="login-visual">
+            <div class="login-visual-copy">
+                <span class="login-visual-kicker">YOUR PERSONAL FOOD GUIDE</span>
+                <h1>Find your next<br><strong>favorite taste.</strong></h1>
+                <p>Smart discoveries, comfort cravings, and memorable meals in one place.</p>
+            </div>
+            <div class="login-visual-ring ring-one"></div>
+            <div class="login-visual-ring ring-two"></div>
+            <div class="login-food-mark">🍴</div>
+        </section>
+
+        <section class="login-panel">
+            <div class="login-panel-top">
+                <a href="/" class="logo">
+                    <div class="logo-badge">🍴</div>
+                    <span>FoodFinder</span>
+                </a>
+                <span class="login-panel-label">Sign in</span>
+            </div>
+
+            <div class="login-form-wrap">
+                <div class="login-icon">🍽️</div>
+                <div class="login-kicker">WELCOME BACK</div>
+                <h2>Sign in</h2>
+                <p class="login-subtitle">Continue your food journey.</p>
+
+                {% if error %}
+                    <p class="auth-error">{{ error }}</p>
+                {% endif %}
+
+                <form action="/login" method="POST">
+                    <div class="input-box">
+                        <span>👤</span>
+                        <input type="text" name="identifier" placeholder="Email or username" required>
+                    </div>
+
+                    <div class="input-box">
+                        <span>🔒</span>
+                        <input type="password" name="password" placeholder="Password" required>
+                    </div>
+
+                    <div class="forgot">
+                        <a href="/forgot-password">Forgot password?</a>
+                    </div>
+
+                    <button class="main-button" type="submit">Sign in</button>
+                </form>
+
+                <p class="auth-register-link">
+                    New to FoodFinder?
+                    <a href="/register">Create an account</a>
+                </p>
+            </div>
+
+            <p class="login-panel-footer">🔒 Your password is securely protected.</p>
+        </section>
+    </main>
+</body>
+</html>

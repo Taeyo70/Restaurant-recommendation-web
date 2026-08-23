@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FoodFinder - Favorites</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+<header class="topbar">
+    <a href="/home" class="logo">
+        <div class="logo-badge">🍴</div>
+        <span>FoodFinder</span>
+    </a>
+
+    <div class="top-actions">
+        <nav class="nav-links">
+            <a href="/home" class="nav-link">Dashboard</a>
+            <a href="/recommendations" class="nav-link">🤖 Smart AI Recommendations</a>
+            <a href="/favorites" class="nav-link active">❤️ Favorites</a>
+        </nav>
+        <a href="/profile" class="profile-menu" aria-label="Open profile">
+            <div class="profile-icon">{{ session.get("username", "G")[:1]|upper }}</div>
+            <div class="profile-text">
+                <strong>{{ session.get("username", "Guest") }}</strong>
+                <small>Food Explorer</small>
+            </div>
+        </a>
+    </div>
+</header>
+
+<main class="page-container favorites-page">
+    <section class="favorites-hero">
+        <div>
+            <span class="recommendation-eyebrow">YOUR SAVED TABLE</span>
+            <h1>Favorite restaurants</h1>
+            <p>Keep the places you want to come back to close at hand.</p>
+        </div>
+        <div class="favorites-hero-icon">❤️</div>
+    </section>
+
+    <div id="favorites-empty" class="no-results favorite-empty" hidden>
+        <div class="no-results-icon">🤍</div>
+        <h2>No favorites yet</h2>
+        <p>Tap the heart on a restaurant card to save it here.</p>
+        <a href="/search" class="browse-button">Explore restaurants</a>
+    </div>
+
+    <div id="favorites-list" class="restaurant-grid"></div>
+</main>
+
+<script src="{{ url_for('static', filename='main.js') }}"></script>
+</body>
+</html>

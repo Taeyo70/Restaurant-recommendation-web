@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Personalized Recommendations</title>
+</head>
+<body>
+    <h1>Your Recommendations</h1>
+
+    {% for item in recommendations %}
+        <div>
+            <h2>{{ item.name }}</h2>
+            <p>{{ item.reason }}</p>
+        </div>
+    {% else %}
+        <p>No recommendations found.</p>
+    {% endfor %}
+
+    <a href="/home">Back to dashboard</a>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FoodFinder - Personalized Recommendations</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+<header class="topbar">
+    <a href="/home" class="logo">
+        <div class="logo-badge">🍴</div>
+        <span>FoodFinder</span>
+    </a>
+    <div class="top-actions">
+        <nav class="nav-links">
+            <a href="/home" class="nav-link">Dashboard</a>
+            <a href="/recommendations" class="nav-link active">🤖 Smart AI Recommendations</a>
+            <a href="/favorites" class="nav-link">❤️ Favorites</a>
+        </nav>
+        <a href="/profile" class="profile-menu" aria-label="Open profile">
+            <div class="profile-icon">{{ session.get("username", "G")[:1]|upper }}</div>
+            <div class="profile-text">
+                <strong>{{ session.get("username", "Guest") }}</strong>
+                <small>Food Explorer</small>
+            </div>
+        </a>
+    </div>
+</header>
+
+<main class="page-container recommendation-page">
+    <section class="analytics-card recommendation-panel">
+        <div class="recommendation-heading">
+            <div>
+                <span class="recommendation-eyebrow">✨ SMART FOOD GUIDE</span>
+                <h1>What are you in the mood for?</h1>
+                <p>Choose your city, mood, craving, and plan. We will create your shortlist.</p>
+            </div>
+            <div class="recommendation-orb">🤖</div>
+        </div>
+
+        <form action="/recommendations" method="POST" class="recommendation-form">
+            <label class="preference-field">City
+                <input type="text" name="city" value="{{ preferences.city }}" placeholder="e.g. Agra" required>
+            </label>
+
+            <label class="preference-field">Mood
+                <select name="mood">
+                    <option value="">Any mood</option>
+                    {% for item in ["Comfort food", "Date night", "Healthy", "Spicy", "Quick bite", "Sweet craving"] %}
+                        <option value="{{ item }}" {% if preferences.mood == item %}selected{% endif %}>{{ item }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="preference-field">Meal plan
+                <select name="meal">
+                    <option value="">Any time</option>
+                    {% for item in ["Breakfast", "Lunch", "Snacks", "Dinner"] %}
+                        <option value="{{ item }}" {% if preferences.meal == item %}selected{% endif %}>{{ item }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="preference-field">Cuisine or craving
+                <input type="text" name="cuisine" value="{{ preferences.cuisine }}" placeholder="e.g. Biryani">
+            </label>
+
+            <label class="preference-field">Dietary preference
+                <select name="diet">
+                    {% for item in ["No preference", "Vegetarian", "Vegan", "Non-veg"] %}
+                        <option value="{{ item }}" {% if preferences.diet == item %}selected{% endif %}>{{ item }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="preference-field">Maximum budget
+                <input type="number" name="max_cost" value="{{ preferences.max_cost }}" placeholder="₹ for two" min="0">
+            </label>
+
+            <label class="preference-field">Minimum rating
+                <select name="min_rating">
+                    <option value="">Any rating</option>
+                    {% for item in ["3.5", "4.0", "4.5"] %}
+                        <option value="{{ item }}" {% if preferences.min_rating == item %}selected{% endif %}>{{ item }}+ stars</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <button type="submit" class="browse-button recommendation-submit">🤖 Find My Restaurants</button>
+        </form>
+    </section>
+
+    {% if searched %}
+        <div class="recommendation-results-heading">
+            <div>
+                <span class="recommendation-eyebrow">YOUR SMART SHORTLIST</span>
+                <h2>🍽️ Restaurants picked for you</h2>
+            </div>
+            <span class="ai-status-chip">{{ ai_message }}</span>
+        </div>
+        <div class="restaurant-grid">
+            {% for restaurant in restaurants %}
+                    <article class="restaurant-card recommendation-card">
+                    <div class="restaurant-header-banner">
+                        <span style="font-weight: 700; background: rgba(255,255,255,0.85); padding: 4px 10px; border-radius: 9999px;">📍 {{ restaurant.City }}</span>
+                        <span class="card-rating-pill">★ {{ restaurant.Rating or "N/A" }}</span>
+                    </div>
+                    <div class="restaurant-body">
+                        <h2 class="restaurant-title">{{ restaurant.Name }}</h2>
+                        <p class="location">📍 {{ restaurant.Location or restaurant.City }}</p>
+                        <div class="tags"><span>{{ restaurant.Cuisine or "Multi-Cuisine" }}</span></div>
+                        <p class="recommendation-reason">✨ {{ restaurant.reason }}</p>
+                        <div class="card-footer-info">
+                            <div class="cost">₹{{ restaurant.Cost or "N/A" }} <small>for two</small></div>
+                            <div class="votes">👥 {{ restaurant.Votes or 0 }} reviews</div>
+                        </div>
+
+                        {% if restaurant["Google Maps Link"] %}
+                            <a href="{{ restaurant['Google Maps Link'] }}" target="_blank" rel="noopener" class="map-button">🗺️ View on Google Maps</a>
+                        {% endif %}
+                    </div>
+                </article>
+            {% else %}
+                <div class="no-results">
+                    <h2>No matching restaurants found</h2>
+                    <p>Try another city, mood, or budget.</p>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+</main>
+</body>
+</html>

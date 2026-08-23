@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Restaurant Finder</title>
+</head>
+<body>
+
+<h1>Restaurant Finder</h1>
+
+{% for restaurant in restaurants %}
+
+<div style="border:1px solid black; padding:10px; margin:10px;">
+
+    <h2>{{ restaurant.Name }}</h2>
+
+    <p>City: {{ restaurant.City }}</p>
+
+    <p>Cuisine: {{ restaurant.Cuisine }}</p>
+
+    <p>Rating: {{ restaurant.Rating }}</p>
+
+    <p>Cost: ₹{{ restaurant.Cost }}</p>
+
+</div>
+
+{% endfor %}
+
+</body>
+</html>

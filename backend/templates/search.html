@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FoodFinder - Search Restaurants</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<!-- =========================
+     TOPBAR
+========================= -->
+<header class="topbar">
+    <a href="/home" class="logo">
+        <div class="logo-badge">🍴</div>
+        <span>FoodFinder</span>
+    </a>
+
+    <div class="top-actions">
+        <nav class="nav-links">
+            <a href="/home" class="nav-link">Dashboard</a>
+            <a href="/recommendations" class="nav-link">🤖 Smart AI Recommendations</a>
+            <a href="/favorites" class="nav-link">❤️ Favorites</a>
+        </nav>
+
+        <a href="/profile" class="profile-menu" aria-label="Open profile">
+            <div class="profile-icon">{{ session.get("username", "G")[:1]|upper }}</div>
+            <div class="profile-text">
+                <strong>{{ session.get("username", "Guest") }}</strong>
+                <small>Food Explorer</small>
+            </div>
+        </a>
+    </div>
+</header>
+
+
+<!-- =========================
+     MAIN PAGE CONTENT
+========================= -->
+<main class="page-container">
+
+    <!-- SEARCH & FILTER TOOLBAR -->
+    <div class="search-header-container">
+        <div class="search-header-title">
+            <h2>🔍 Find Your Next Delicious Meal</h2>
+            <p>Filter by cuisine, city, budget, and top ratings across thousands of spots.</p>
+        </div>
+        
+        <form class="search-bar page-search-bar" action="/search" method="GET">
+            <div class="search-input-wrapper">
+                <span class="search-icon">🔎</span>
+                <input 
+                    type="text" 
+                    name="keyword" 
+                    value="{{ keyword or '' }}" 
+                    placeholder="Search restaurant name, location, or cuisine (e.g. Pizza in Mumbai)..."
+                >
+            </div>
+            <button type="submit" class="search-btn-primary">
+                <span class="btn-icon">🔍</span>
+                <span>Search</span>
+            </button>
+        </form>
+
+        <!-- MULTI-CRITERIA FILTERS -->
+        <form class="filters-wrapper" action="/search" method="GET">
+            {% if keyword %}
+                <input type="hidden" name="keyword" value="{{ keyword }}">
+            {% endif %}
+
+            <!-- CITY FILTER -->
+            <div class="filter-group">
+                <span class="filter-icon">🏙️</span>
+                <select name="city" onchange="this.form.submit()">
+                    <option value="">All Cities</option>
+                    {% for city in cities %}
+                        <option value="{{ city['City'] }}" {% if selected_city == city['City'] %}selected{% endif %}>
+                            {{ city["City"] }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- CUISINE FILTER -->
+            <div class="filter-group">
+                <span class="filter-icon">🍳</span>
+                <select name="cuisine" onchange="this.form.submit()">
+                    <option value="">All Cuisines</option>
+                    {% for item in cuisines %}
+                        <option value="{{ item }}" {% if selected_cuisine == item %}selected{% endif %}>
+                            {{ item }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- BUDGET FILTER -->
+            <div class="filter-group">
+                <span class="filter-icon">💰</span>
+                <select name="max_cost" onchange="this.form.submit()">
+                    <option value="">Any Budget</option>
+                    <option value="500" {% if selected_cost == '500' %}selected{% endif %}>Under ₹500</option>
+                    <option value="1000" {% if selected_cost == '1000' %}selected{% endif %}>Under ₹1000</option>
+                    <option value="1500" {% if selected_cost == '1500' %}selected{% endif %}>Under ₹1500</option>
+                    <option value="2000" {% if selected_cost == '2000' %}selected{% endif %}>Under ₹2000</option>
+                </select>
+            </div>
+
+            <!-- RATING FILTER -->
+            <div class="filter-group">
+                <span class="filter-icon">⭐</span>
+                <select name="min_rating" onchange="this.form.submit()">
+                    <option value="">Any Rating</option>
+                    <option value="3.5" {% if selected_rating == '3.5' %}selected{% endif %}>3.5+ Rating</option>
+                    <option value="4.0" {% if selected_rating == '4.0' %}selected{% endif %}>4.0+ Rating</option>
+                    <option value="4.5" {% if selected_rating == '4.5' %}selected{% endif %}>4.5+ Top Rated</option>
+                </select>
+            </div>
+
+            <button class="filter-button" type="submit">
+                <span>⚡</span> Apply Filters
+            </button>
+
+            {% if keyword or selected_city or selected_cuisine or selected_cost or selected_rating %}
+                <a href="/search" class="reset-button">
+                    <span>🔄</span> Clear All
+                </a>
+            {% endif %}
+        </form>
+
+    </div>
+
+
+    <!-- RESULTS HEADER COUNTER -->
+    <div class="results-bar">
+        <div class="results-count">
+            Found <span>{{ restaurants|length }}</span> restaurants matching your criteria
+        </div>
+    </div>
+
+
+    <!-- RESTAURANT CARDS GRID -->
+    <div class="restaurant-grid">
+
+        {% for restaurant in restaurants %}
+            <article class="restaurant-card">
+
+                <div class="restaurant-header-banner">
+                    <span style="font-weight: 700; font-size: 0.9rem; color: #1e293b; background: rgba(255,255,255,0.85); padding: 4px 10px; border-radius: 9999px;">
+                        📍 {{ restaurant["City"] or "India" }}
+                    </span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <button
+                            class="favorite-btn"
+                            data-id="{{ loop.index }}"
+                            data-name="{{ restaurant['Name'] }}"
+                            data-city="{{ restaurant['City'] or 'India' }}"
+                            data-location="{{ restaurant['Location'] or restaurant['City'] or 'Location available' }}"
+                            data-cuisine="{{ restaurant['Cuisine'] or 'Multi-Cuisine' }}"
+                            data-rating="{{ restaurant['Rating'] or 'N/A' }}"
+                            data-cost="{{ restaurant['Cost'] or 'N/A' }}"
+                            data-votes="{{ restaurant['Votes'] or 0 }}"
+                            data-map="{{ restaurant['Google Maps Link'] or '' }}"
+                            aria-label="Favorite"
+                        >
+                            ❤️
+                        </button>
+                        <span class="card-rating-pill">
+                            ★ {{ restaurant["Rating"] or "N/A" }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="restaurant-body">
+
+                    <h2 class="restaurant-title">
+                        {{ restaurant["Name"] }}
+                    </h2>
+
+                    <p class="location">
+                        📍 {{ restaurant["Location"] or restaurant["City"] or "Location available" }}
+                    </p>
+
+                    <div class="tags">
+                        {% if restaurant["Cuisine"] %}
+                            {% for item in restaurant["Cuisine"].split(",")[:4] %}
+                                <span>{{ item.strip() }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span>Multi-Cuisine</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="card-footer-info">
+                        <div class="cost">
+                            ₹{{ restaurant["Cost"] or "N/A" }} <small>for two</small>
+                        </div>
+
+                        <div class="votes">
+                            👥 {{ restaurant["Votes"] or 0 }} reviews
+                        </div>
+                    </div>
+
+                    <div class="restaurant-buttons">
+                        {% if restaurant["Google Maps Link"] %}
+                            <a href="{{ restaurant['Google Maps Link'] }}" target="_blank" class="map-button">
+                                🗺️ View on Google Maps
+                            </a>
+                        {% else %}
+                            <a href="https://www.google.com/maps/search/?api=1&query={{ restaurant['Name']|urlencode }} {{ restaurant['Location']|urlencode }}" target="_blank" class="map-button">
+                                🗺️ View on Google Maps
+                            </a>
+                        {% endif %}
+                    </div>
+
+                </div>
+
+            </article>
+        {% else %}
+            <div class="no-results">
+                <div class="no-results-icon">🍽️</div>
+                <h2>No restaurants found</h2>
+                <p>Try adjusting your search terms, location, or filters to find what you're looking for.</p>
+                <a href="/search" class="browse-button" style="margin-top: 20px;">View All Restaurants</a>
+            </div>
+        {% endfor %}
+
+    </div>
+
+</main>
+
+
+<!-- =========================
+     FOOTER
+========================= -->
+<footer class="footer">
+    <div class="footer-content">
+        <div class="footer-links">
+            <span>About Us</span>
+            <span>Help Center</span>
+            <span>Privacy Policy</span>
+            <span>Terms of Service</span>
+        </div>
+        <p>© 2026 FoodFinder. All rights reserved.</p>
+    </div>
+</footer>
+
+<script src="{{ url_for('static', filename='main.js') }}"></script>
+
+</body>
+</html>

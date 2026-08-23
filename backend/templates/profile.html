@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FoodFinder - Profile</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+<header class="topbar">
+    <a href="/home" class="logo">
+        <div class="logo-badge">🍴</div>
+        <span>FoodFinder</span>
+    </a>
+
+    <div class="top-actions">
+        <a href="/home" class="nav-link">Dashboard</a>
+        <a href="/recommendations" class="nav-link">🤖 Smart AI Recommendations</a>
+    </div>
+</header>
+
+<main class="page-container profile-page">
+    <section class="profile-card">
+        <div class="profile-large-icon">{{ user.username[:1]|upper }}</div>
+        <span class="recommendation-eyebrow">FOODFINDER MEMBER</span>
+        <h1>{{ user.username }}</h1>
+        <p class="profile-intro">Your account details and FoodFinder preferences.</p>
+
+        <div class="profile-details">
+            <div class="profile-detail-row">
+                <span>👤 Username</span>
+                <strong>{{ user.username }}</strong>
+            </div>
+            <div class="profile-detail-row">
+                <span>✉ Email</span>
+                <strong>{{ user.email }}</strong>
+            </div>
+        </div>
+
+        <div class="profile-actions">
+            <a href="/recommendations" class="browse-button">🤖 Get Recommendations</a>
+            <a href="/logout" class="profile-logout">Log out</a>
+        </div>
+    </section>
+</main>
+</body>
+</html>
