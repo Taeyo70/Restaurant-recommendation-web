@@ -1,5 +1,5 @@
 /* ==========================================================================
-   FoodFinder Interactive JavaScript & Animation Engine
+   Restaaurant FinderInteractive JavaScript & Animation Engine
    ========================================================================== */
 
 document.addEventListener('DOMContentLoaded', () => {

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FoodFinder - Profile</title>
+    <title>Restaaurant Finder- Profile</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
@@ -24,9 +24,9 @@
 <main class="page-container profile-page">
     <section class="profile-card">
         <div class="profile-large-icon">{{ user.username[:1]|upper }}</div>
-        <span class="recommendation-eyebrow">FOODFINDER MEMBER</span>
+        <span class="recommendation-eyebrow">Restaaurant FinderMEMBER</span>
         <h1>{{ user.username }}</h1>
-        <p class="profile-intro">Your account details and FoodFinder preferences.</p>
+        <p class="profile-intro">Your account details and Restaaurant Finderpreferences.</p>
 
         <div class="profile-details">
             <div class="profile-detail-row">
