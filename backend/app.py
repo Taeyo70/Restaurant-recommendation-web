@@ -38,9 +38,11 @@ AUTH_LOCK = Lock()
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
+print("OPENROUTER KEY LOADED:", bool(OPENROUTER_API_KEY))
+
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-AI_MODEL = "qwen/qwen3-8b:free"
+AI_MODEL = "openrouter/free"
 
 
 def ask_ai(prompt):
