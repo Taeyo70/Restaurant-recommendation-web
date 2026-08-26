@@ -1480,7 +1480,7 @@ Rules:
 
             ai_message = (
                 "Showing database matches. "
-                "AI explanation was unavailable."
+                
             )
 
     # --------------------------------------------------------
