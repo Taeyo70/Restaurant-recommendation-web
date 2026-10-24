@@ -45,7 +45,7 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 AI_MODEL = "openrouter/free"
 
 
-def ask_ai(prompt):
+def ask_ai(prompt, temperature=0.2, max_tokens=700):
     """
     Send a prompt to OpenRouter and return the AI text response.
     """
@@ -63,8 +63,8 @@ def ask_ai(prompt):
                 "content": prompt
             }
         ],
-        "temperature": 0.2,
-        "max_tokens": 700
+        "temperature": temperature,
+        "max_tokens": max_tokens
     }
 
     data = json.dumps(payload).encode("utf-8")
@@ -657,6 +657,214 @@ def home():
 # NORMAL SEARCH
 # ============================================================
 
+
+# ============================================================
+# NATURAL-LANGUAGE HELPERS
+# ============================================================
+
+import re
+
+STOP_WORDS = {
+    "a", "an", "the", "in", "at", "near", "around", "for", "to", "of",
+    "and", "or", "with", "me", "my", "i", "want", "need", "find", "show",
+    "give", "suggest", "looking", "look", "good", "best", "nice", "some",
+    "any", "place", "places", "restaurant", "restaurants", "food",
+    "eat", "eating", "please", "can", "you", "is", "are", "where",
+    "cheap", "budget", "affordable", "top", "rated", "highly",
+    "rating", "ratings", "star", "stars", "above", "under", "below",
+    "cost", "price", "rs", "rupees", "food", "foods", "items",
+}
+
+# plain words people use -> words that actually appear in the data
+SYNONYMS = {
+    
+}
+
+
+def extract_hints(text):
+    """Read 'under 500', 'below 1000', '4+ rating', 'cheap', 'top rated'."""
+    max_cost = None
+    min_rating = None
+
+    m = re.search(r"(?:under|below|less than|within|max|upto|up to)\s*(?:rs\.?|₹)?\s*(\d{2,5})", text)
+    if m:
+        max_cost = float(m.group(1))
+        text = text.replace(m.group(0), " ")
+
+    m = re.search(r"(\d(?:\.\d)?)\s*(?:\+|plus|star|stars|and above|and up)", text)
+    if m:
+        min_rating = float(m.group(1))
+        text = text.replace(m.group(0), " ")
+
+    if re.search(r"\b(cheap|budget|affordable|inexpensive)\b", text) and not max_cost:
+        max_cost = 600.0
+
+    if re.search(r"\b(top rated|highly rated|best)\b", text) and not min_rating:
+        min_rating = 4.0
+
+    return {"text": text, "max_cost": max_cost, "min_rating": min_rating}
+
+
+def meaningful_words(text):
+    words = re.findall(r"[a-z]+", text.lower())
+    out = []
+    for w in words:
+        if w in STOP_WORDS or len(w) < 3:
+            continue
+        w = SYNONYMS.get(w, w)
+        out.append(w)
+    return out
+
+
+
+# ============================================================
+# CUISINE DETECTION (uses every cuisine that exists in the DB)
+# ============================================================
+
+_CUISINE_CACHE = {"list": None}
+
+CUISINE_ALIASES = {
+    "dessert": "Desserts", "sweet": "Desserts", "sweets": "Desserts",
+    "cake": "Bakery and Confectionary", "bakery": "Bakery and Confectionary",
+    "veg": "North Indian", "maharashtra": "Maharashtrian",
+    "south": "South Indian", "dosa": "South Indian", "idli": "South Indian",
+    "biriyani": "Biryani", "noodles": "Chinese", "momos": "Tibetan",
+    "bbq": "Barbecue", "cafe": "Coffee", "chai": "Tea",
+    "mexican": "Mexican", "arab": "Arabian",
+}
+
+
+def all_cuisines(conn):
+    if _CUISINE_CACHE["list"] is None:
+        found = set()
+        for row in conn.execute(
+            "SELECT DISTINCT Cuisine FROM restaurants WHERE Cuisine IS NOT NULL"
+        ).fetchall():
+            for item in row["Cuisine"].split(","):
+                item = item.strip()
+                if item:
+                    found.add(item)
+        # longest first so "north indian" wins over "indian"
+        _CUISINE_CACHE["list"] = sorted(found, key=len, reverse=True)
+    return _CUISINE_CACHE["list"]
+
+
+def find_cuisines(text, conn):
+    """Return (cuisines_found, text_with_cuisine_words_removed)."""
+    text = text.lower()
+    found = []
+    for cuisine in all_cuisines(conn):
+        base = cuisine.lower()
+        if base.endswith("s"):
+            base = base[:-1]
+        pattern = r"\b" + re.escape(base) + r"s?\b"
+        if re.search(pattern, text):
+            found.append(cuisine)
+            text = re.sub(pattern, " ", text)
+    for alias, cuisine in CUISINE_ALIASES.items():
+        pattern = r"\b" + re.escape(alias) + r"s?\b"
+        if re.search(pattern, text):
+            if cuisine not in found:
+                found.append(cuisine)
+            text = re.sub(pattern, " ", text)
+    return found, text
+
+
+
+def _norm(text):
+    return re.sub(r"[^a-z0-9]+", " ", str(text).lower()).strip()
+
+
+def parse_ai_reasons(ai_text, restaurants):
+    """Pull {restaurant name: reason} out of messy AI output."""
+    ai_text = (ai_text or "").strip()
+    start, end = ai_text.find("{"), ai_text.rfind("}")
+    if start == -1 or end == -1:
+        raise ValueError("No JSON found in AI reply")
+    data = json.loads(ai_text[start:end + 1])
+    items = data.get("reasons", []) if isinstance(data, dict) else data
+
+    by_norm = {_norm(r["Name"]): r["Name"] for r in restaurants}
+    result = {}
+    for pos, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        reason = (item.get("reason") or "").strip()
+        if not reason:
+            continue
+        name = None
+        key = _norm(item.get("name", ""))
+        if key in by_norm:
+            name = by_norm[key]
+        else:  # partial match, e.g. AI dropped the branch name
+            for k, original in by_norm.items():
+                if key and (key in k or k in key):
+                    name = original
+                    break
+        if name is None and pos < len(restaurants):
+            name = restaurants[pos]["Name"]  # fall back to order
+        if name and name not in result:
+            result[name] = reason
+    return result
+
+
+# ============================================================
+# HUMAN-SOUNDING RECOMMENDATION REASONS (used when AI is off)
+# ============================================================
+
+import random
+
+
+def friendly_reason(r, prefs, used=None):
+    """Build a specific, varied reason from the restaurant's real data."""
+    name = r.get("Name", "This place")
+    rating = r.get("Rating") or 0
+    votes = r.get("Votes") or 0
+    cost = r.get("Cost") or 0
+    cuisines = [c.strip() for c in (r.get("Cuisine") or "").split(",") if c.strip()]
+    wanted = (prefs.get("cuisine") or "").lower()
+    main = next((c for c in cuisines if wanted and wanted in c.lower()),
+                cuisines[0] if cuisines else "food")
+    area = (r.get("Location") or r.get("City") or "").split(",")[0].strip()
+
+    picks = []
+    if rating >= 4.3:
+        picks.append(f"Okay this one's a gem — {rating}★ for {main}, you can't really go wrong.")
+        picks.append(f"{rating}★ is hard to beat. If you want {main}, this is your safe bet.")
+        picks.append(f"Top of the list for a reason: {rating}★ and great {main}.")
+    elif rating >= 3.8:
+        picks.append(f"Solid {rating}★ for {main}, and people keep coming back for more.")
+        picks.append(f"Reliable pick — {rating}★ and a proper {main} menu.")
+        picks.append(f"Good {main} spot — {rating}★ from real diners.")
+    else:
+        picks.append(f"A decent {main} option at {rating}★ if you want something easy and nearby.")
+
+    if votes >= 500:
+        picks.append(f"Loved by a crowd — {int(votes)}+ votes, so it's a proven {main} place.")
+    if cost and cost <= 500:
+        picks.append(f"Easy on the pocket at ~₹{int(cost)} for two, and {rating}★ {main} too.")
+    elif cost and cost >= 1500:
+        picks.append(f"A bit of a splurge (~₹{int(cost)} for two), but {name} is worth it for {main}.")
+    elif cost:
+        picks.append(f"Fair price (~₹{int(cost)} for two) for proper {main} at {name}.")
+    if area:
+        picks.append(f"It's in {area}, so you get your {main} fix without a long trip.")
+    if prefs.get("mood"):
+        picks.append(f"Perfect for a {prefs['mood'].lower()} kind of day — {main} hits the spot.")
+    if prefs.get("meal"):
+        picks.append(f"Great for {prefs['meal'].lower()} — {main} done right, {rating}★.")
+    if len(cuisines) >= 3:
+        picks.append(f"Lots of choice here — {', '.join(cuisines[:3])} all on one menu.")
+
+    random.seed(name)  # same restaurant -> same line, different restaurants vary
+    random.shuffle(picks)
+    used = used or set()
+    for p in picks:
+        if p not in used:
+            return p
+    return f"{name}: {picks[0]}"  # every line already used -> make it unique
+
+
 @app.route("/search")
 def search():
 
@@ -699,6 +907,7 @@ def search():
 
         text = keyword.lower()
 
+        # 1) Detect a city mentioned anywhere in the sentence
         cities = conn.execute(
             "SELECT DISTINCT City FROM restaurants"
         ).fetchall()
@@ -706,58 +915,49 @@ def search():
         found_city = None
 
         for row in cities:
-
-            if (
-                row["City"]
-                and row["City"].lower()
-                in text
-            ):
-
+            if row["City"] and row["City"].lower() in text:
                 found_city = row["City"]
-
+                text = text.replace(row["City"].lower(), " ")
                 break
 
         if found_city and not city:
+            query += " AND City = ? "
+            params.append(found_city)
 
-            query += """
-                AND City = ?
-            """
+        # 1b) Detect cuisines (north indian, malvani, chinese, desserts...)
+        found_cuisines, text = find_cuisines(text, conn)
 
-            params.append(
-                found_city
-            )
+        if found_cuisines:
+            query += " AND (" + " OR ".join(
+                ["Cuisine LIKE ?"] * len(found_cuisines)
+            ) + ") "
+            params.extend(["%" + c + "%" for c in found_cuisines])
 
-        search_term = (
-            text
-            .replace("restaurants", "")
-            .replace("restaurant", "")
-            .replace(" in ", " ")
-            .strip()
-        )
+        # 2) Pull out price / rating hints written in plain language
+        hints = extract_hints(text)
+        text = hints["text"]
 
-        if search_term and not found_city:
+        if hints["max_cost"] and not max_cost:
+            query += " AND Cost <= ? "
+            params.append(hints["max_cost"])
 
+        if hints["min_rating"] and not min_rating:
+            query += " AND Rating >= ? "
+            params.append(hints["min_rating"])
+
+        # 3) Every remaining meaningful word must match somewhere
+        #    (word-by-word, NOT the whole sentence as one phrase)
+        for word in meaningful_words(text):
             query += """
                 AND (
                     Name LIKE ?
                     OR Cuisine LIKE ?
-                    OR City LIKE ?
                     OR Location LIKE ?
+                    OR Locality LIKE ?
                 )
             """
-
-            value = (
-                "%"
-                + search_term
-                + "%"
-            )
-
-            params.extend([
-                value,
-                value,
-                value,
-                value
-            ])
+            value = "%" + word + "%"
+            params.extend([value, value, value, value])
 
     if city:
 
@@ -887,15 +1087,26 @@ def ai_search():
             url_for("search")
         )
 
+    conn = get_db()
+    valid_cities = [r["City"] for r in conn.execute(
+        "SELECT DISTINCT City FROM restaurants WHERE City IS NOT NULL"
+    ).fetchall()]
+    valid_cuisines = sorted(all_cuisines(conn))
+    conn.close()
+
     prompt = f"""
-Convert this restaurant request into JSON filters.
+You convert a person's natural-language restaurant request into search filters.
 
 Request:
 {user_query}
 
-Return ONLY valid JSON.
+Valid cities (use EXACT spelling, or "" if none is mentioned):
+{", ".join(valid_cities)}
 
-Use exactly these fields:
+All cuisines in the database (use EXACT spelling):
+{", ".join(valid_cuisines)}
+
+Return ONLY valid JSON with exactly these fields:
 
 {{
     "keyword": "",
@@ -906,13 +1117,16 @@ Use exactly these fields:
 }}
 
 Rules:
-
-- Put food or restaurant names in keyword.
-- Put the city separately in city.
-- Put cuisine separately in cuisine.
-- Use numbers only for max_cost and min_rating.
-- Use empty strings when information is missing.
-- Do not add any explanation outside the JSON.
+- city must be one of the valid cities above, otherwise "".
+- cuisine: pick ONE cuisine from the list above if the request implies it
+  (e.g. "malvani fish" -> "Malvani", "sweet" -> "Desserts",
+  "noodles" -> "Chinese"). Must be an exact match from the list, else "".
+- keyword: only a specific dish or restaurant name, otherwise "".
+  Never put the city or the whole sentence in keyword.
+- max_cost: number for cost for two (cheap = 500, mid-range = 1000).
+- min_rating: number 1-5 (good = 4, very good / best = 4.3).
+- Use "" when information is missing.
+- No explanation, no markdown, JSON only.
 """
 
     try:
@@ -970,6 +1184,27 @@ Rules:
             ""
         ) not in ("", None)
     }
+
+    # Validate AI cuisine/city against the real database values
+    if "cuisine" in cleaned_filters:
+        match = [c for c in valid_cuisines
+                 if c.lower() == str(cleaned_filters["cuisine"]).lower()]
+        if match:
+            cleaned_filters["cuisine"] = match[0]
+        else:
+            cleaned_filters.pop("cuisine")
+
+    if "city" in cleaned_filters:
+        match = [c for c in valid_cities
+                 if c.lower() == str(cleaned_filters["city"]).lower()]
+        if match:
+            cleaned_filters["city"] = match[0]
+        else:
+            cleaned_filters.pop("city")
+
+    # Nothing usable from the AI -> let the smart keyword search handle it
+    if not cleaned_filters:
+        return redirect(url_for("search", keyword=user_query))
 
     return redirect(
         url_for(
@@ -1183,6 +1418,13 @@ def recommendations():
             + "%"
         )
 
+    # Mood / meal / diet are SOFT preferences: if they leave nothing,
+    # we retry without them instead of showing an empty page.
+    soft_conditions = []
+    soft_params = []
+    hard_conditions, hard_params = conditions, params
+    conditions, params = soft_conditions, soft_params
+
     # --------------------------------------------------------
     # MOOD + MEAL
     # --------------------------------------------------------
@@ -1284,6 +1526,8 @@ def recommendations():
             + ")"
         )
 
+    conditions, params = hard_conditions, hard_params
+
     # --------------------------------------------------------
     # MAX COST
     # --------------------------------------------------------
@@ -1332,7 +1576,7 @@ def recommendations():
     # DATABASE QUERY
     # --------------------------------------------------------
 
-    query = f"""
+    base_sql = """
         SELECT
             Name,
             Location,
@@ -1343,20 +1587,34 @@ def recommendations():
             Cost,
             "Google Maps Link"
         FROM restaurants
-        WHERE {' AND '.join(conditions)}
+        WHERE {where}
         ORDER BY Rating DESC, Votes DESC
         LIMIT 12
     """
 
     conn = get_db()
 
+    relaxed = False
+
     restaurants = [
         dict(row)
         for row in conn.execute(
-            query,
-            params
+            base_sql.format(
+                where=" AND ".join(hard_conditions + soft_conditions)
+            ),
+            hard_params + soft_params
         ).fetchall()
     ]
+
+    if not restaurants and soft_conditions:
+        relaxed = True
+        restaurants = [
+            dict(row)
+            for row in conn.execute(
+                base_sql.format(where=" AND ".join(hard_conditions)),
+                hard_params
+            ).fetchall()
+        ]
 
     conn.close()
 
@@ -1376,100 +1634,72 @@ def recommendations():
     elif not OPENROUTER_API_KEY:
 
         ai_message = (
-            "Showing database matches. "
-            "AI is not configured."
+            "✨ Smart picks based on ratings, price and your preferences."
         )
 
     else:
 
+        slim = [
+            {
+                "name": r["Name"],
+                "cuisine": r["Cuisine"],
+                "rating": r["Rating"],
+                "votes": r["Votes"],
+                "cost_for_two": r["Cost"],
+                "area": r["Location"],
+                "city": r["City"],
+            }
+            for r in restaurants
+        ]
+
         prompt = f"""
-You are the AI recommendation assistant for Restaurant Finder.
+You are a friendly foodie friend recommending restaurants.
 
-The user selected these preferences:
+What the person wants:
+{json.dumps({k: v for k, v in preferences.items() if v}, indent=2)}
 
-{json.dumps(preferences, indent=2)}
+Restaurants:
+{json.dumps(slim, indent=2)}
 
-Here are the restaurants found by the database:
-
-{json.dumps(restaurants[:6], indent=2)}
-
-For EACH restaurant, write a very short reason explaining
-why it matches the user's preferences.
-
-Return ONLY valid JSON in exactly this format:
-
-{{
-    "reasons": [
-        {{
-            "name": "exact restaurant name",
-            "reason": "short explanation"
-        }}
-    ]
-}}
+For EACH restaurant write ONE short, warm, casual line (12-22 words)
+saying why it suits THIS person. Sound like a friend texting, not a robot.
 
 Rules:
+- Mention something specific: its rating, price, cuisine, area or votes.
+- Connect it to what they asked for (mood, meal, cuisine, budget, diet).
+- Every line must be different. Never repeat the same opening words.
+- Never write "matches your preferences" or "matches your selected".
+- Use only the facts given. Do not invent dishes or reviews.
+- Return ONLY valid JSON, no markdown:
 
-- Use the exact restaurant name from the supplied data.
-- Keep every reason under 20 words.
-- Do not invent restaurant information.
-- Do not add markdown.
-- Do not add text outside the JSON.
+{{"reasons": [{{"name": "exact restaurant name", "reason": "the line"}}]}}
 """
 
         try:
 
-            ai_text = ask_ai(
-                prompt
-            )
-
-            ai_text = ai_text.strip()
-
-            # Remove markdown code fences if model adds them
-            if ai_text.startswith("```"):
-
-                ai_text = (
-                    ai_text
-                    .replace("```json", "")
-                    .replace("```", "")
-                    .strip()
-                )
-
-            result = json.loads(
-                ai_text
-            )
-
             reasons = {}
+            last_error = None
 
-            for item in result.get(
-                "reasons",
-                []
-            ):
-
-                name = item.get(
-                    "name"
-                )
-
-                reason = item.get(
-                    "reason"
-                )
-
-                if name and reason:
-
-                    reasons[name] = reason
+            for attempt in range(2):  # free models fail often: retry once
+                try:
+                    ai_text = ask_ai(
+                        prompt,
+                        temperature=0.8,
+                        max_tokens=2500
+                    )
+                    reasons = parse_ai_reasons(ai_text, restaurants)
+                    if reasons:
+                        break
+                except Exception as err:
+                    last_error = err
+                    print("RECOMMENDATION AI attempt", attempt + 1, "failed:", err)
 
             if reasons:
-
-                ai_message = (
-                    "✨ AI personalized "
-                    "these recommendations for you."
-                )
-
+                ai_message = "✨ AI personalized these recommendations for you."
             else:
-
-                ai_message = (
-                    "✨ Restaurants matched "
-                    "your selected preferences."
-                )
+                ai_message = "✨ Smart picks based on ratings, price and your preferences."
+                if last_error:
+                    print("RECOMMENDATION AI gave up:", last_error)
 
         except Exception as error:
 
@@ -1489,11 +1719,23 @@ Rules:
     # ADD REASONS TO RESTAURANT CARDS
     # --------------------------------------------------------
 
+    used = set()
+
     for restaurant in restaurants:
 
-        restaurant["reason"] = reasons.get(
-            restaurant["Name"],
-            "Matches your selected preferences and restaurant rating."
+        reason = reasons.get(restaurant["Name"])
+
+        # missing or repeated -> build a specific one from the data
+        if not reason or reason in used:
+            reason = friendly_reason(restaurant, preferences, used)
+
+        used.add(reason)
+        restaurant["reason"] = reason
+
+    if relaxed and restaurants:
+        ai_message = (
+            "No exact match for your mood/diet, so here are the "
+            "closest options for your city, cuisine and budget."
         )
 
     # --------------------------------------------------------

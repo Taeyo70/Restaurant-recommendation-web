@@ -24,7 +24,7 @@
             <div class="profile-icon">{{ session.get("username", "G")[:1]|upper }}</div>
             <div class="profile-text">
                 <strong>{{ session.get("username", "Guest") }}</strong>
-                <small>Food Explorer</small>
+                <small>Restaaurant Explorer</small>
             </div>
         </a>
     </div>
@@ -43,7 +43,7 @@
 
         <form action="/recommendations" method="POST" class="recommendation-form">
             <label class="preference-field">City
-                <input type="text" name="city" value="{{ preferences.city }}" placeholder="e.g. Agra" required>
+                <input type="text" name="city" value="{{ preferences.city }}" placeholder="e.g. Mumbai" required>
             </label>
 
             <label class="preference-field">Mood
