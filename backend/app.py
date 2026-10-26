@@ -129,137 +129,234 @@ def get_db():
 
 
 # ============================================================
-# AUTH WORKBOOK
+# USER ACCOUNTS (stored in a real database, NOT in the Excel file)
+#
+#   - On Render / production: set DATABASE_URL (a free PostgreSQL
+#     from Neon / Supabase / Render) -> accounts are permanent.
+#   - On your own PC: no setup needed, uses a local users.db file.
 # ============================================================
 
-def _open_auth_workbook():
+DATABASE_URL = os.environ.get("DATABASE_URL")
+USERS_DB = os.environ.get(
+    "USERS_DB",
+    os.path.join(BASE_DIR, "users.db")
+)
 
-    if not os.path.exists(AUTH_WORKBOOK):
-        raise FileNotFoundError(
-            f"Workbook not found: {AUTH_WORKBOOK}"
-        )
-
-    workbook = load_workbook(AUTH_WORKBOOK)
-
-    if "users" not in workbook.sheetnames:
-
-        users = workbook.create_sheet("users")
-
-        users.append([
-            "id",
-            "username",
-            "email",
-            "password_hash",
-            "created_at"
-        ])
-
-    return workbook
+if DATABASE_URL:
+    print("USERS STORAGE: PostgreSQL (permanent)")
+else:
+    print("USERS STORAGE: local file", USERS_DB,
+          "(NOT permanent on Render - set DATABASE_URL)")
 
 
-def _save_auth_workbook(workbook):
+def _auth_conn():
 
-    directory = (
-        os.path.dirname(AUTH_WORKBOOK)
-        or "."
-    )
+    if DATABASE_URL:
 
-    file_descriptor, temporary_path = tempfile.mkstemp(
-        dir=directory,
-        prefix="restaurant-finder-auth-",
-        suffix=".xlsx",
-    )
+        import psycopg2
 
-    os.close(file_descriptor)
+        return psycopg2.connect(DATABASE_URL), "%s"
+
+    return sqlite3.connect(USERS_DB, timeout=15), "?"
+
+
+def init_auth_db():
+
+    conn, ph = _auth_conn()
 
     try:
 
-        workbook.save(temporary_path)
-        workbook.close()
+        cur = conn.cursor()
 
-        os.replace(
-            temporary_path,
-            AUTH_WORKBOOK
-        )
+        if DATABASE_URL:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    email TEXT NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at BIGINT NOT NULL
+                )
+                """
+            )
+        else:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL,
+                    email TEXT NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                )
+                """
+            )
+
+        conn.commit()
+
+        # One-time import of accounts that already exist in the Excel file
+        cur.execute("SELECT COUNT(*) FROM users")
+
+        if cur.fetchone()[0] == 0 and os.path.exists(AUTH_WORKBOOK):
+
+            try:
+
+                workbook = load_workbook(
+                    AUTH_WORKBOOK,
+                    read_only=True
+                )
+
+                if "users" in workbook.sheetnames:
+
+                    for row in workbook["users"].iter_rows(
+                        min_row=2,
+                        values_only=True
+                    ):
+
+                        if row and row[1] and row[2] and row[3]:
+
+                            cur.execute(
+                                f"INSERT INTO users "
+                                f"(username, email, password_hash, created_at) "
+                                f"VALUES ({ph}, {ph}, {ph}, {ph})",
+                                (
+                                    str(row[1]),
+                                    str(row[2]).lower(),
+                                    str(row[3]),
+                                    int(row[4] or time.time()),
+                                )
+                            )
+
+                    conn.commit()
+
+                workbook.close()
+
+            except Exception as error:
+
+                conn.rollback()
+                print("USER IMPORT SKIPPED:", error)
 
     finally:
 
-        if os.path.exists(temporary_path):
-            os.remove(temporary_path)
-
-
-def init_auth_sheets():
-
-    with AUTH_LOCK:
-
-        if not os.path.exists(AUTH_WORKBOOK):
-            raise FileNotFoundError(
-                f"Workbook not found: {AUTH_WORKBOOK}"
-            )
-
-        workbook = load_workbook(
-            AUTH_WORKBOOK
-        )
-
-        if "users" in workbook.sheetnames:
-
-            workbook.close()
-            return
-
-        users = workbook.create_sheet(
-            "users"
-        )
-
-        users.append([
-            "id",
-            "username",
-            "email",
-            "password_hash",
-            "created_at"
-        ])
-
-        _save_auth_workbook(workbook)
+        conn.close()
 
 
 def find_user(identifier):
 
-    with AUTH_LOCK:
+    identifier = (identifier or "").strip()
 
-        workbook = _open_auth_workbook()
+    if not identifier:
+        return None
 
-        users = workbook["users"]
+    conn, ph = _auth_conn()
 
-        user = None
+    try:
 
-        for row in users.iter_rows(
-            min_row=2,
-            values_only=True
-        ):
+        cur = conn.cursor()
 
-            if (
-                row[1] == identifier
-                or str(row[2]).lower()
-                == identifier.lower()
-            ):
+        cur.execute(
+            f"SELECT id, username, email, password_hash FROM users "
+            f"WHERE LOWER(username) = LOWER({ph}) "
+            f"OR LOWER(email) = LOWER({ph}) LIMIT 1",
+            (identifier, identifier)
+        )
 
-                user = {
-                    "id": row[0],
-                    "username": row[1],
-                    "email": row[2],
-                    "password_hash": row[3],
-                }
+        row = cur.fetchone()
 
-                break
+    finally:
 
-        workbook.close()
+        conn.close()
 
-        return user
+    if row is None:
+        return None
+
+    return {
+        "id": row[0],
+        "username": row[1],
+        "email": row[2],
+        "password_hash": row[3],
+    }
 
 
 def find_user_by_email(email):
     return find_user(email)
 
 
-init_auth_sheets()
+def create_user(username, email, password_hash):
+    """Returns 'ok', 'exists' or 'error'."""
+
+    conn, ph = _auth_conn()
+
+    try:
+
+        cur = conn.cursor()
+
+        cur.execute(
+            f"SELECT 1 FROM users WHERE LOWER(username) = LOWER({ph}) "
+            f"OR LOWER(email) = LOWER({ph})",
+            (username, email)
+        )
+
+        if cur.fetchone():
+            return "exists"
+
+        cur.execute(
+            f"INSERT INTO users "
+            f"(username, email, password_hash, created_at) "
+            f"VALUES ({ph}, {ph}, {ph}, {ph})",
+            (username, email, password_hash, int(time.time()))
+        )
+
+        conn.commit()
+
+        return "ok"
+
+    except Exception as error:
+
+        conn.rollback()
+        print("CREATE USER ERROR:", error)
+
+        return "error"
+
+    finally:
+
+        conn.close()
+
+
+def update_password(email, password_hash):
+
+    conn, ph = _auth_conn()
+
+    try:
+
+        cur = conn.cursor()
+
+        cur.execute(
+            f"UPDATE users SET password_hash = {ph} "
+            f"WHERE LOWER(email) = LOWER({ph})",
+            (password_hash, email)
+        )
+
+        changed = cur.rowcount > 0
+
+        conn.commit()
+
+        return changed
+
+    except Exception as error:
+
+        conn.rollback()
+        print("UPDATE PASSWORD ERROR:", error)
+
+        return False
+
+    finally:
+
+        conn.close()
+
+
+init_auth_db()
 
 
 # ============================================================
@@ -414,61 +511,36 @@ def register():
             error="Password must contain at least 8 characters."
         )
 
+    if "@" not in email or "." not in email.split("@")[-1]:
+
+        return render_template(
+            "register.html",
+            error="Please enter a valid email address."
+        )
+
     password_hash = generate_password_hash(
         password
     )
 
-    with AUTH_LOCK:
+    result = create_user(
+        username,
+        email,
+        password_hash
+    )
 
-        workbook = _open_auth_workbook()
+    if result == "exists":
 
-        users = workbook["users"]
-
-        for row in users.iter_rows(
-            min_row=2,
-            values_only=True
-        ):
-
-            if (
-                row[1] == username
-                or str(row[2]).lower()
-                == email
-            ):
-
-                workbook.close()
-
-                return render_template(
-                    "register.html",
-                    error="Username or email already exists."
-                )
-
-        user_ids = [
-            row[0]
-            for row in users.iter_rows(
-                min_row=2,
-                values_only=True
-            )
-            if row[0]
-        ]
-
-        next_id = (
-            max(user_ids, default=0)
-            + 1
+        return render_template(
+            "register.html",
+            error="Username or email already exists."
         )
 
-        users.append([
-            next_id,
-            username,
-            email,
-            password_hash,
-            int(time.time())
-        ])
+    if result != "ok":
 
-        _save_auth_workbook(
-            workbook
+        return render_template(
+            "register.html",
+            error="Could not save your account. Please try again."
         )
-
-        workbook.close()
 
     return redirect(
         url_for("login")
@@ -512,34 +584,10 @@ def forgot_password():
         new_password
     )
 
-    updated = False
-
-    with AUTH_LOCK:
-
-        workbook = _open_auth_workbook()
-
-        users = workbook["users"]
-
-        for row in users.iter_rows(
-            min_row=2
-        ):
-
-            if (
-                str(row[2].value).lower()
-                == email
-            ):
-
-                row[3].value = password_hash
-
-                updated = True
-
-                break
-
-        _save_auth_workbook(
-            workbook
-        )
-
-        workbook.close()
+    updated = update_password(
+        email,
+        password_hash
+    )
 
     if not updated:
 
